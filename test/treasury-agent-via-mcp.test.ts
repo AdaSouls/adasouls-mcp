@@ -23,6 +23,8 @@ import { registerTools } from "../src/tools.js";
 const baseUrl = process.env.ADASOULS_API_URL;
 const apiKey = process.env.ADASOULS_TEST_API_KEY;
 const agentId = process.env.ADASOULS_TEST_AGENT_ID;
+// Registered vendor with real (fixture) history: the API computes its record.
+const vendorId = process.env.ADASOULS_TEST_VENDOR_ID;
 
 async function connectedClient() {
   const server = new McpServer({ name: "test", version: "0.0.1" });
@@ -36,7 +38,7 @@ async function connectedClient() {
   return client;
 }
 
-describe.skipIf(!baseUrl || !apiKey || !agentId)("Treasury Agent demo via MCP (Phase 8 exit criterion)", () => {
+describe.skipIf(!baseUrl || !apiKey || !agentId || !vendorId)("Treasury Agent demo via MCP (Phase 8 exit criterion)", () => {
   it("puts 500 USDC of idle treasury to work through MCP tool calls, matching the SDK-based demo's behavior", async () => {
     const client = await connectedClient();
 
@@ -51,7 +53,7 @@ describe.skipIf(!baseUrl || !apiKey || !agentId)("Treasury Agent demo via MCP (P
         capability: "pay",
         amount: "500",
         asset: "USDC",
-        counterparty: { id: "agent_demo_vendor", completedTransactions: 5 },
+        counterparty: { id: vendorId! },
       },
     });
     expect((checkResult.structuredContent as { allowed: boolean }).allowed).toBe(true);
@@ -63,8 +65,8 @@ describe.skipIf(!baseUrl || !apiKey || !agentId)("Treasury Agent demo via MCP (P
         capability: "pay",
         amount: "500",
         asset: "USDC",
-        to: "agent_demo_vendor",
-        counterparty: { id: "agent_demo_vendor", completedTransactions: 5 },
+        to: vendorId!,
+        counterparty: { id: vendorId! },
       },
     });
     expect(executeResult.isError).toBeFalsy();
@@ -87,7 +89,7 @@ describe.skipIf(!baseUrl || !apiKey || !agentId)("Treasury Agent demo via MCP (P
         amount: "10",
         asset: "USDC",
         to: "agent_untrusted_vendor",
-        counterparty: { id: "agent_untrusted_vendor", completedTransactions: 0 },
+        counterparty: { id: "agent_untrusted_vendor" },
       },
     });
 
