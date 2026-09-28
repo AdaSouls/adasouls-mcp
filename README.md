@@ -72,9 +72,6 @@ npm test
 
 ## Known gaps
 
-- `@adasouls/sdk` isn't published yet — depends on it via a local
-  sibling-checkout `file:` path, same interim state as
-  `reference-agents/treasury-agent`. Switch once it's published.
 - No hosted server mode (SSE/streamable HTTP) — stdio only, per
   `REPOSITORY.md`'s "leaning toward deferring hosted mode until
   requested."

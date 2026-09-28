@@ -30,15 +30,9 @@ const counterpartyParam = {
   counterparty: z
     .object({
       id: z.string(),
-      completedTransactions: z.number().optional(),
-      reputationEvidence: z.object({ completedActions: z.number(), disputeRate: z.number() }).optional(),
-      credentials: z.array(z.string()).optional(),
-      tokenHoldings: z.record(z.string(), z.string()).optional(),
-      organizationVerified: z.boolean().optional(),
-      communities: z.array(z.string()).optional(),
-      successRate: z.number().optional(),
     })
-    .optional(),
+    .optional()
+    .describe("Who the agent would transact with (ALMA id). Its record -- completed transactions, disputes -- is computed by AdaSouls from receipts, never supplied here."),
 };
 
 const policyEvaluationSchema = { allowed: z.boolean(), reasons: z.array(z.string()), approvalsRequired: z.array(z.string()) };
