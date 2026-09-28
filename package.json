@@ -8,7 +8,9 @@
   "bin": {
     "adasouls-mcp": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/AdaSouls/adasouls-mcp.git"
@@ -23,7 +25,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@adasouls/sdk": "file:../adasouls-sdk-typescript",
+    "@adasouls/sdk": "^0.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^16.4.5",
     "zod": "^3.25.0 || ^4.0.0"
