@@ -1,29 +1,19 @@
 # @adasouls/mcp
 
-AdaSouls's MCP tool surface for MCP-compatible AI agent runtimes. A thin
-adapter over `@adasouls/sdk` — zero independent policy, authorization,
-or execution logic (ADR-009 in `alma`). See
-`docs/repositories/adasouls-mcp/REPOSITORY.md` for the full design.
+An [MCP](https://modelcontextprotocol.io) server for
+[AdaSouls](https://github.com/AdaSouls): it lets any MCP-compatible AI agent
+runtime check policy and execute economic actions (pay, …) through
+AdaSouls, under the identity, delegations and policies of an
+[ALMA](https://github.com/AdaSouls/alma) agent.
 
-## Tools
+It is a thin adapter over [`@adasouls/sdk`](https://github.com/AdaSouls/adasouls-sdk-typescript):
+no policy, authorization or execution logic of its own. MIT licensed.
 
-Mirrors `docs/06-api-contracts.md`'s MCP tool surface one-for-one:
+> **No hosted API yet.** The SDK's default endpoint
+> (`https://api.adasouls.io/v1`) is not live. Set `ADASOULS_API_URL` to
+> your own `adasouls-api`.
 
-| Tool | Maps to |
-|---|---|
-| `adasouls_get_identity(agentId)` | `agent.identity()` |
-| `adasouls_get_reputation(agentId)` | `agent.reputation()` |
-| `adasouls_get_authority(agentId)` | `agent.authority()` |
-| `adasouls_check_policy(agentId, capability, ...)` | `agent.checkPolicy()` |
-| `adasouls_execute(agentId, capability, ...)` | `agent.execute()` |
-| `adasouls_get_history(agentId, cursor?, limit?)` | `agent.history()` |
-
-Every failure maps to a structured `isError: true` result carrying enough
-detail (`structuredContent.kind`, plus policy reasons / approval
-requirements / retry-after / etc.) for the calling agent to reason about
-what to do next — never a generic failure. See `src/errors.ts`.
-
-## Usage (as an MCP client config)
+## Use it from an MCP client
 
 ```json
 {
@@ -31,49 +21,72 @@ what to do next — never a generic failure. See `src/errors.ts`.
     "adasouls": {
       "command": "npx",
       "args": ["-y", "@adasouls/mcp"],
-      "env": { "ADASOULS_API_KEY": "ak_..." }
+      "env": {
+        "ADASOULS_API_KEY": "ak_...",
+        "ADASOULS_API_URL": "http://localhost:3000/v1"
+      }
     }
   }
 }
 ```
 
-Local/stdio mode only in this pass — no hosted server mode yet (deferred
-per `REPOSITORY.md`'s open question, until a customer actually needs one).
+Use an **agent key** (minted for one agent in the AdaSouls console): it can
+act as that agent only.
 
-## Local development
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `adasouls_get_identity(agentId)` | The agent's ALMA identity |
+| `adasouls_get_reputation(agentId)` | Its reputation evidence |
+| `adasouls_get_authority(agentId)` | Its active delegations and applicable policies |
+| `adasouls_check_policy(agentId, capability, …, counterparty?)` | Would this be allowed right now? Creates nothing |
+| `adasouls_execute(agentId, capability, …, counterparty?)` | Create an economic action |
+| `adasouls_get_history(agentId, cursor?, limit?)` | Its past economic actions |
+
+`counterparty` is an id only: AdaSouls computes the counterparty's record
+(completed transactions, disputes) itself.
+
+Every failure comes back as a structured `isError: true` result —
+`structuredContent.kind` plus policy reasons, required approvals,
+retry-after, etc. — so the calling agent can reason about what to do next.
+
+## Development
 
 ```bash
 npm install
 cp .env.example .env   # ADASOULS_API_KEY, ADASOULS_API_URL
-npm run dev             # stdio server
+npm run dev            # stdio server
+npm test               # mocked tool-level suite (real MCP wire format)
 ```
 
-## Testing
+To also run the end-to-end suite (`test/treasury-agent-via-mcp.test.ts`)
+against a local `adasouls-api`: run its `create-treasury-agent-test-fixture`
+script, then
 
 ```bash
-npm test
-```
-
-Runs the mocked tool-level suite by default (`test/tools.test.ts` —
-fake `@adasouls/sdk`, `InMemoryTransport`, real MCP wire format). To also
-run the real end-to-end suite (`test/treasury-agent-via-mcp.test.ts`,
-Phase 8's actual exit criterion — "the Treasury Agent demo also runs via
-an MCP client") against a locally running `adasouls-api`:
-
-```bash
-# in adasouls-api: podman-compose up -d, npm run dev, then:
-cd adasouls-api && npm run create-treasury-agent-test-fixture
-# copy the printed export lines, then in this repo:
-ADASOULS_API_URL="http://localhost:<port>/v1" \
+ADASOULS_API_URL="http://localhost:3000/v1" \
 ADASOULS_TEST_API_KEY="ak_..." \
 ADASOULS_TEST_AGENT_ID="alma:main:agent:..." \
+ADASOULS_TEST_VENDOR_ID="alma:main:agent:..." \
 npm test
 ```
 
-## Known gaps
+Releases use [changesets](https://github.com/changesets/changesets); merging
+the "Version Packages" PR publishes to npm with provenance.
 
-- No hosted server mode (SSE/streamable HTTP) — stdio only, per
-  `REPOSITORY.md`'s "leaning toward deferring hosted mode until
-  requested."
-- Marketplace tools (`adasouls_find_agents`, `adasouls_hire_agent`) are
-  Phase 13+ scope, not built here.
+Code comments cite AdaSouls design documents (`REPOSITORY.md`, `ADR-NNN`)
+that are not published yet; the tests are the precise specification.
+
+## Not built yet
+
+- A hosted server mode (SSE / streamable HTTP): stdio only for now.
+- Marketplace tools (`adasouls_find_agents`, `adasouls_hire_agent`).
+
+## Security
+
+Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)
