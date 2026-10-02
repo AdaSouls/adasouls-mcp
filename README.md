@@ -43,6 +43,7 @@ act as that agent only.
 | `adasouls_check_policy(agentId, capability, …, counterparty?)` | Would this be allowed right now? Creates nothing |
 | `adasouls_execute(agentId, capability, …, counterparty?)` | Create an economic action |
 | `adasouls_get_history(agentId, cursor?, limit?)` | Its past economic actions |
+| `adasouls_test_connection(agentId, runtime)` | Run once when connecting an agent: proves the runtime holds a working key and passes the authority and policy checks, with a simulated action of amount 0 |
 
 `counterparty` is an id only: AdaSouls computes the counterparty's record
 (completed transactions, disputes) itself.

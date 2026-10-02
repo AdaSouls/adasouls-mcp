@@ -27,7 +27,7 @@ function fakeAdaSouls(agentMethods: Record<string, (...args: never[]) => unknown
 }
 
 describe("adasouls-mcp tools", () => {
-  it("exposes exactly the six documented tools", async () => {
+  it("exposes exactly the documented tools", async () => {
     const client = await connectedClient(fakeAdaSouls({}));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
@@ -38,6 +38,7 @@ describe("adasouls-mcp tools", () => {
         "adasouls_check_policy",
         "adasouls_execute",
         "adasouls_get_history",
+        "adasouls_test_connection",
       ].sort()
     );
   });
@@ -112,5 +113,75 @@ describe("adasouls-mcp tools", () => {
     await client.callTool({ name: "adasouls_get_history", arguments: { agentId: "agent_1", limit: 5 } });
 
     expect(history).toHaveBeenCalledWith({ cursor: undefined, limit: 5 });
+  });
+
+  /**
+   * A real MCP client lists tools first and then validates every result
+   * against the tool's output schema. The API returns more fields than
+   * the schemas name, and adds more over time, so the schemas must accept
+   * them -- these use the shapes adasouls-api actually sends.
+   */
+  describe("results validate for a client that listed the tools", () => {
+    const action = {
+      id: "eco_1",
+      principalId: "alma:main:organization:acme",
+      agentId: "agent_1",
+      agentInstanceId: null,
+      intent: { capability: "pay", amount: "1", asset: "USDC" },
+      capability: "pay",
+      counterparty: null,
+      authority: { delegationId: "del_1", policySnapshot: [] },
+      policyEvaluation: { allowed: true, reasons: [], approvalsRequired: [], matchedPolicies: [], inputs: { counterparty: null, dailySpendSoFar: {} } },
+      executionPlan: null,
+      approval: null,
+      execution: null,
+      status: "authorized",
+      result: null,
+      needsReconciliation: false,
+      idempotencyKey: null,
+      createdAt: "2026-10-02T00:00:00.000Z",
+    };
+    const listed = async (methods: Record<string, (...args: never[]) => unknown>) => {
+      const client = await connectedClient(fakeAdaSouls(methods));
+      await client.listTools();
+      return client;
+    };
+
+    it("adasouls_execute", async () => {
+      const client = await listed({ execute: vi.fn().mockResolvedValue({ action }) });
+      const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "1", asset: "USDC" } });
+      expect(result.isError).toBeFalsy();
+      expect((result.structuredContent as { authority: unknown }).authority).toEqual(action.authority);
+    });
+
+    it("adasouls_check_policy", async () => {
+      const client = await listed({ checkPolicy: vi.fn().mockResolvedValue(action.policyEvaluation) });
+      const result = await client.callTool({ name: "adasouls_check_policy", arguments: { agentId: "agent_1", capability: "pay" } });
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("adasouls_get_identity with a field the schema doesn't name", async () => {
+      const identity = vi.fn().mockResolvedValue({ id: "agent_1", subjectType: "agent", displayName: "A", status: "active", principal: "p", createdAt: "now", somethingNew: 1 });
+      const client = await listed({ identity });
+      expect((await client.callTool({ name: "adasouls_get_identity", arguments: { agentId: "agent_1" } })).isError).toBeFalsy();
+    });
+
+    it("adasouls_get_history", async () => {
+      const client = await listed({ history: vi.fn().mockResolvedValue({ items: [action] }) });
+      expect((await client.callTool({ name: "adasouls_get_history", arguments: { agentId: "agent_1" } })).isError).toBeFalsy();
+    });
+  });
+
+  it("adasouls_test_connection passes the runtime through; a failed test is a normal result with its reasons", async () => {
+    const failed = { ok: false, reasons: ["no policy applies to this agent"], checks: { credential: true, authority: true, policies: false }, economicActionId: null, instanceId: null, status: "identity_issued" };
+    const testConnection = vi.fn().mockResolvedValue(failed);
+    const client = await connectedClient(fakeAdaSouls({ testConnection }));
+    await client.listTools();
+
+    const result = await client.callTool({ name: "adasouls_test_connection", arguments: { agentId: "agent_1", runtime: "claude-desktop" } });
+
+    expect(testConnection).toHaveBeenCalledWith({ runtime: "claude-desktop" });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual(failed);
   });
 });
