@@ -1,5 +1,11 @@
 # @adasouls/mcp
 
+## 0.3.1
+
+### Patch Changes
+
+- [#6](https://github.com/AdaSouls/adasouls-mcp/pull/6) [`0c4a1f6`](https://github.com/AdaSouls/adasouls-mcp/commit/0c4a1f67b824a9e1b4bdc381ad1f69981eca4914) Thanks [@MatiFalcone](https://github.com/MatiFalcone)! - The server now reports its real package version to MCP clients; it was hardcoded to 0.1.0.
+
 ## 0.3.0
 
 ### Minor Changes
