@@ -224,3 +224,12 @@ describe("adasouls-mcp tools", () => {
     });
   });
 });
+
+describe("server info", () => {
+  it("reports the package's own version, not a hardcoded one", async () => {
+    const { createServer, SERVER_VERSION } = await import("../src/server.js");
+    const pkg = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("../package.json", import.meta.url), "utf8"));
+    expect(SERVER_VERSION).toBe(pkg.version);
+    expect(typeof createServer).toBe("function");
+  });
+});
