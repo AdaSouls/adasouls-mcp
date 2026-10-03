@@ -1,6 +1,6 @@
 {
   "name": "@adasouls/mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for AdaSouls: lets MCP-compatible AI agent runtimes check policy and execute economic actions through AdaSouls -- a thin adapter over @adasouls/sdk.",
   "license": "MIT",
   "homepage": "https://github.com/AdaSouls/adasouls-mcp#readme",
