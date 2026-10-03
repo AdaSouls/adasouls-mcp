@@ -39,6 +39,10 @@ describe("adasouls-mcp tools", () => {
         "adasouls_execute",
         "adasouls_get_history",
         "adasouls_test_connection",
+        "adasouls_report_payment",
+        "adasouls_find_agents",
+        "adasouls_hire_agent",
+        "adasouls_get_job",
       ].sort()
     );
   });
@@ -183,5 +187,40 @@ describe("adasouls-mcp tools", () => {
     expect(testConnection).toHaveBeenCalledWith({ runtime: "claude-desktop" });
     expect(result.isError).toBeFalsy();
     expect(result.structuredContent).toEqual(failed);
+  });
+
+  describe("self-paid actions and the marketplace", () => {
+    const action = { id: "eco_1", agentId: "agent_1", capability: "hire", status: "authorized", intent: {}, needsReconciliation: false, createdAt: "now", authority: {}, executionPlan: { mode: "self" } };
+    const job = { id: "job_1", status: "awaiting_payment", service: "analyze-protocol", result: null, error: null, price: { amount: "0.10", asset: "USDC" } };
+    const payment = { economicActionId: "eco_1", chain: "mock-chain", from: "0xa", to: "0xb", amount: "0.10", asset: "USDC" };
+
+    it("adasouls_hire_agent returns the job, the action and the payment to make", async () => {
+      const hire = vi.fn().mockResolvedValue({ job, action: { action }, payment });
+      const client = await connectedClient(fakeAdaSouls({ hire }));
+      await client.listTools();
+      const result = await client.callTool({ name: "adasouls_hire_agent", arguments: { agentId: "agent_1", listingId: "lst_1", service: "analyze-protocol", input: { protocol: "aave" } } });
+      expect(hire).toHaveBeenCalledWith("lst_1", { service: "analyze-protocol", input: { protocol: "aave" } });
+      expect(result.isError).toBeFalsy();
+      expect(result.structuredContent).toMatchObject({ job: { id: "job_1" }, action: { id: "eco_1" }, payment });
+    });
+
+    it("adasouls_report_payment, adasouls_find_agents and adasouls_get_job pass through", async () => {
+      const reportPayment = vi.fn().mockResolvedValue({ action: { ...action, status: "executing" } });
+      const findAgents = vi.fn().mockResolvedValue([{ id: "lst_1", title: "Research" }]);
+      const getJob = vi.fn().mockResolvedValue({ ...job, status: "completed", result: { risk: "low" } });
+      const client = await connectedClient(fakeAdaSouls({ reportPayment, findAgents, job: getJob }));
+      await client.listTools();
+
+      const reported = await client.callTool({ name: "adasouls_report_payment", arguments: { agentId: "agent_1", economicActionId: "eco_1", txHash: "0xabc" } });
+      expect(reportPayment).toHaveBeenCalledWith("eco_1", "0xabc");
+      expect(reported.structuredContent).toMatchObject({ status: "executing" });
+
+      const found = await client.callTool({ name: "adasouls_find_agents", arguments: { agentId: "agent_1", capability: "analyze-protocol" } });
+      expect(findAgents).toHaveBeenCalledWith({ capability: "analyze-protocol" });
+      expect(found.structuredContent).toEqual({ items: [{ id: "lst_1", title: "Research" }] });
+
+      const got = await client.callTool({ name: "adasouls_get_job", arguments: { agentId: "agent_1", jobId: "job_1" } });
+      expect(got.structuredContent).toMatchObject({ status: "completed", result: { risk: "low" } });
+    });
   });
 });
