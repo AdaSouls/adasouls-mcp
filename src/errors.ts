@@ -14,8 +14,8 @@ import {
  * tool error responses with enough detail (policy reasons, approval
  * requirements) for the calling agent to reason about what to do next
  * -- not just a generic failure." A bare try/throw would lose exactly
- * that detail (the calling LLM only ever sees `content` text plus
- * whatever's in `structuredContent`), so every SDK error type maps to
+ * that detail (the calling LLM only ever sees the result's `content`),
+ * so every SDK error type maps to
  * its own descriptive response instead of one generic error branch.
  */
 export function toToolError(err: unknown): CallToolResult {
@@ -44,6 +44,13 @@ export function toToolError(err: unknown): CallToolResult {
   return errorResult(message, { kind: "unknown_error" });
 }
 
-function errorResult(message: string, structuredContent: Record<string, unknown>): CallToolResult {
-  return { content: [{ type: "text", text: message }], structuredContent, isError: true };
+/**
+ * The detail goes in a second text block, as JSON -- not in
+ * `structuredContent`, which a client validates against the tool's output
+ * schema even on an error: a denial would then reach the agent as a
+ * protocol error ("does not match the tool's output schema") with its
+ * reasons lost.
+ */
+function errorResult(message: string, detail: Record<string, unknown>): CallToolResult {
+  return { content: [{ type: "text", text: message }, { type: "text", text: JSON.stringify(detail) }], isError: true };
 }

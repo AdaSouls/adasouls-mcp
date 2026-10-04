@@ -94,7 +94,8 @@ describe.skipIf(!baseUrl || !apiKey || !agentId || !vendorId)("Treasury Agent de
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "policy_denied" });
-    expect((result.structuredContent as { reasons: string[] }).reasons.join(" ")).toContain("completed transactions");
+    const detail = JSON.parse((result.content as { text: string }[])[1].text) as { kind: string; reasons: string[] };
+    expect(detail.kind).toBe("policy_denied");
+    expect(detail.reasons.join(" ")).toContain("completed transactions");
   });
 });

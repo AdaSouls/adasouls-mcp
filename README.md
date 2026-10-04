@@ -53,9 +53,10 @@ act as that agent only.
 `counterparty` is an id only: AdaSouls computes the counterparty's record
 (completed transactions, disputes) itself.
 
-Every failure comes back as a structured `isError: true` result —
-`structuredContent.kind` plus policy reasons, required approvals,
-retry-after, etc. — so the calling agent can reason about what to do next.
+Every failure comes back as an `isError: true` result with two text
+blocks: the message, and a JSON object with `kind` plus policy reasons,
+required approvals, retry-after, etc. — so the calling agent can reason
+about what to do next.
 
 ## Development
 

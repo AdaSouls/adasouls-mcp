@@ -26,6 +26,13 @@ function fakeAdaSouls(agentMethods: Record<string, (...args: never[]) => unknown
   return { agent: () => agentMethods } as unknown as AdaSouls;
 }
 
+/** The JSON detail of an error result: its second text block. */
+function errorDetail(result: unknown): Record<string, unknown> {
+  const r = result as { structuredContent?: unknown; content: { type: string; text: string }[] };
+  expect(r.structuredContent).toBeUndefined();
+  return JSON.parse(r.content[1].text);
+}
+
 describe("adasouls-mcp tools", () => {
   it("exposes exactly the documented tools", async () => {
     const client = await connectedClient(fakeAdaSouls({}));
@@ -69,7 +76,17 @@ describe("adasouls-mcp tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
+    expect(errorDetail(result)).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
+  });
+
+  it("an error reaches a client that validates results against the tools' output schemas", async () => {
+    const execute = vi.fn().mockRejectedValue(new AdaSoulsPolicyError("policy denied", ["exceeds limit"], []));
+    const client = await connectedClient(fakeAdaSouls({ execute }));
+    await client.listTools(); // from here the client validates structuredContent, on errors too
+
+    const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "999999", asset: "USDC" } });
+    expect(result.isError).toBe(true);
+    expect(errorDetail(result)).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
   });
 
   it("adasouls_execute maps approval-pending distinctly from a policy denial", async () => {
@@ -82,7 +99,7 @@ describe("adasouls-mcp tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "approval_pending", economicActionId: "eco_1" });
+    expect(errorDetail(result)).toMatchObject({ kind: "approval_pending", economicActionId: "eco_1" });
   });
 
   it("adasouls_execute maps a missing-delegation error too", async () => {
@@ -95,7 +112,7 @@ describe("adasouls-mcp tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "no_delegation" });
+    expect(errorDetail(result)).toMatchObject({ kind: "no_delegation" });
   });
 
   it("adasouls_check_policy never errors on a denial -- returns allowed:false in structuredContent", async () => {
@@ -219,10 +236,8 @@ describe("adasouls-mcp tools", () => {
       await client.callTool({ name: "adasouls_report_metrics", arguments: { agentId: "agent_1", jobId: "job_1", model: "m" } });
       expect(report).toHaveBeenLastCalledWith({ job: "job_1" }, { model: "m" });
 
-      // Like the other error tests here, on a client that hasn't listed the tools.
-      const fresh = await connectedClient(fakeAdaSouls({ report }));
       for (const args of [{ model: "m" }, { economicActionId: "eco_1", jobId: "job_1", model: "m" }]) {
-        const bad = await fresh.callTool({ name: "adasouls_report_metrics", arguments: { agentId: "agent_1", ...args } });
+        const bad = await client.callTool({ name: "adasouls_report_metrics", arguments: { agentId: "agent_1", ...args } });
         expect(bad.isError).toBe(true);
       }
       expect(report).toHaveBeenCalledTimes(2);
