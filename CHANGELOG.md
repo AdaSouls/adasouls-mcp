@@ -1,5 +1,17 @@
 # @adasouls/mcp
 
+## 0.4.0
+
+### Minor Changes
+
+- [#8](https://github.com/AdaSouls/adasouls-mcp/pull/8) [`ccc7d12`](https://github.com/AdaSouls/adasouls-mcp/commit/ccc7d12c54e4dadc564781e61e509e3677738b63) Thanks [@MatiFalcone](https://github.com/MatiFalcone)! - `adasouls_report_metrics`: an agent declares figures only it knows (compute cost, model, tokens, duration) about one of its actions or a job it was hired for.
+
+- [#8](https://github.com/AdaSouls/adasouls-mcp/pull/8) [`e6ef428`](https://github.com/AdaSouls/adasouls-mcp/commit/e6ef4280afad89d5444fa2a631646638de082412) Thanks [@MatiFalcone](https://github.com/MatiFalcone)! - `ADASOULS_ONLINE_AGENT_ID`: optionally shows an agent as online for as long as the server runs.
+
+### Patch Changes
+
+- [#8](https://github.com/AdaSouls/adasouls-mcp/pull/8) [`15cdef5`](https://github.com/AdaSouls/adasouls-mcp/commit/15cdef5ac21311b156b391b7ef095963bb12a8a5) Thanks [@MatiFalcone](https://github.com/MatiFalcone)! - Errors no longer carry `structuredContent`. A client that validates results against a tool's output schema rejected every error (a policy denial, a pending approval) as a protocol error, losing its reasons. The detail (`kind`, reasons, required approvals) is now a JSON object in the result's second text block.
+
 ## 0.3.1
 
 ### Patch Changes
