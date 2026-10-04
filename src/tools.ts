@@ -10,7 +10,8 @@ import { toToolError } from "./errors.js";
  * one-for-one: adasouls_get_identity/reputation/authority/check_policy/
  * execute/get_history, plus adasouls_test_connection for connecting an
  * agent, adasouls_report_payment for agents that pay from their own
- * wallet, and the marketplace (find, hire, get job).
+ * wallet, adasouls_report_metrics for figures only the agent knows, and
+ * the marketplace (find, hire, get job).
  */
 
 /**
@@ -235,6 +236,36 @@ export function registerTools(server: McpServer, adasouls: AdaSouls) {
       try {
         const handle = await adasouls.agent(agentId).reportPayment(economicActionId, txHash);
         return { content: [{ type: "text", text: JSON.stringify(handle.action) }], structuredContent: structured(handle.action) };
+      } catch (err) {
+        return toToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "adasouls_report_metrics",
+    {
+      title: "Report what the work cost",
+      description:
+        "Declares figures only this agent knows about one of its actions or a job it was hired for: what it cost to compute, which model did it, tokens, duration. AdaSouls signs and logs each figure as declared by the agent. Report real figures: a declared figure is public on the agent's record and can never be changed.",
+      inputSchema: {
+        ...agentIdParam,
+        economicActionId: z.string().min(1).optional().describe("The action the figures are about. Give this or jobId."),
+        jobId: z.string().min(1).optional().describe("The job this agent was hired for. Give this or economicActionId."),
+        computeCost: z.object({ amount: z.string().describe('A decimal, e.g. "0.0421"'), currency: z.string().describe('e.g. "USD"') }).optional(),
+        model: z.string().optional().describe("The model that did the work, as its provider names it"),
+        inputTokens: z.number().int().nonnegative().optional(),
+        outputTokens: z.number().int().nonnegative().optional(),
+        durationMs: z.number().int().nonnegative().optional(),
+      },
+      outputSchema: open({ reports: z.array(open({ id: z.string(), metric: z.string(), value: z.string(), unit: z.string().nullable(), reportedAt: z.string() })) }),
+    },
+    async ({ agentId, economicActionId, jobId, ...metrics }) => {
+      try {
+        if ((economicActionId === undefined) === (jobId === undefined)) throw new TypeError("give exactly one of economicActionId and jobId");
+        const subject = economicActionId !== undefined ? { action: economicActionId } : { job: jobId! };
+        const reports = await adasouls.agent(agentId).report(subject, metrics);
+        return { content: [{ type: "text", text: JSON.stringify(reports) }], structuredContent: { reports } };
       } catch (err) {
         return toToolError(err);
       }

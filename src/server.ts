@@ -13,6 +13,12 @@ export const SERVER_VERSION: string = (createRequire(import.meta.url)("../packag
 export interface CreateServerOptions {
   apiKey: string;
   baseUrl?: string;
+  /**
+   * Optional: an agent to show as online for as long as this server
+   * runs (the api key must be that agent's own). Without it the agent is
+   * shown by its last activity.
+   */
+  onlineAgentId?: string;
 }
 
 /**
@@ -24,5 +30,9 @@ export function createServer(options: CreateServerOptions): McpServer {
   const server = new McpServer({ name: "adasouls-mcp", version: SERVER_VERSION });
   const adasouls = new AdaSouls({ apiKey: options.apiKey, baseUrl: options.baseUrl });
   registerTools(server, adasouls);
+  if (options.onlineAgentId) {
+    // stderr: stdout belongs to the MCP transport.
+    adasouls.agent(options.onlineAgentId).stayOnline({ onError: (err) => console.error(`[adasouls-mcp] online signal failed: ${err instanceof Error ? err.message : String(err)}`) });
+  }
   return server;
 }

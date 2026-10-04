@@ -26,6 +26,13 @@ function fakeAdaSouls(agentMethods: Record<string, (...args: never[]) => unknown
   return { agent: () => agentMethods } as unknown as AdaSouls;
 }
 
+/** The JSON detail of an error result: its second text block. */
+function errorDetail(result: unknown): Record<string, unknown> {
+  const r = result as { structuredContent?: unknown; content: { type: string; text: string }[] };
+  expect(r.structuredContent).toBeUndefined();
+  return JSON.parse(r.content[1].text);
+}
+
 describe("adasouls-mcp tools", () => {
   it("exposes exactly the documented tools", async () => {
     const client = await connectedClient(fakeAdaSouls({}));
@@ -40,6 +47,7 @@ describe("adasouls-mcp tools", () => {
         "adasouls_get_history",
         "adasouls_test_connection",
         "adasouls_report_payment",
+        "adasouls_report_metrics",
         "adasouls_find_agents",
         "adasouls_hire_agent",
         "adasouls_get_job",
@@ -68,7 +76,17 @@ describe("adasouls-mcp tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
+    expect(errorDetail(result)).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
+  });
+
+  it("an error reaches a client that validates results against the tools' output schemas", async () => {
+    const execute = vi.fn().mockRejectedValue(new AdaSoulsPolicyError("policy denied", ["exceeds limit"], []));
+    const client = await connectedClient(fakeAdaSouls({ execute }));
+    await client.listTools(); // from here the client validates structuredContent, on errors too
+
+    const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "999999", asset: "USDC" } });
+    expect(result.isError).toBe(true);
+    expect(errorDetail(result)).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
   });
 
   it("adasouls_execute maps approval-pending distinctly from a policy denial", async () => {
@@ -81,7 +99,7 @@ describe("adasouls-mcp tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "approval_pending", economicActionId: "eco_1" });
+    expect(errorDetail(result)).toMatchObject({ kind: "approval_pending", economicActionId: "eco_1" });
   });
 
   it("adasouls_execute maps a missing-delegation error too", async () => {
@@ -94,7 +112,7 @@ describe("adasouls-mcp tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ kind: "no_delegation" });
+    expect(errorDetail(result)).toMatchObject({ kind: "no_delegation" });
   });
 
   it("adasouls_check_policy never errors on a denial -- returns allowed:false in structuredContent", async () => {
@@ -202,6 +220,27 @@ describe("adasouls-mcp tools", () => {
       expect(hire).toHaveBeenCalledWith("lst_1", { service: "analyze-protocol", input: { protocol: "aave" } });
       expect(result.isError).toBeFalsy();
       expect(result.structuredContent).toMatchObject({ job: { id: "job_1" }, action: { id: "eco_1" }, payment });
+    });
+
+    it("adasouls_report_metrics declares figures about an action or a job, never both or neither", async () => {
+      const report = vi.fn().mockResolvedValue([{ id: "arp_1", metric: "compute_cost", value: "0.0421", unit: "USD", reportedAt: "2026-10-04T12:00:00Z", envelope: {}, log: null }]);
+      const client = await connectedClient(fakeAdaSouls({ report }));
+      await client.listTools();
+
+      const figures = { computeCost: { amount: "0.0421", currency: "USD" }, inputTokens: 1820 };
+      const ok = await client.callTool({ name: "adasouls_report_metrics", arguments: { agentId: "agent_1", economicActionId: "eco_1", ...figures } });
+      expect(report).toHaveBeenCalledWith({ action: "eco_1" }, figures);
+      expect(ok.isError).toBeFalsy();
+      expect(ok.structuredContent).toMatchObject({ reports: [{ id: "arp_1", value: "0.0421", unit: "USD" }] });
+
+      await client.callTool({ name: "adasouls_report_metrics", arguments: { agentId: "agent_1", jobId: "job_1", model: "m" } });
+      expect(report).toHaveBeenLastCalledWith({ job: "job_1" }, { model: "m" });
+
+      for (const args of [{ model: "m" }, { economicActionId: "eco_1", jobId: "job_1", model: "m" }]) {
+        const bad = await client.callTool({ name: "adasouls_report_metrics", arguments: { agentId: "agent_1", ...args } });
+        expect(bad.isError).toBe(true);
+      }
+      expect(report).toHaveBeenCalledTimes(2);
     });
 
     it("adasouls_report_payment, adasouls_find_agents and adasouls_get_job pass through", async () => {
