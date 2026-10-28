@@ -6,6 +6,7 @@ import {
   AdaSoulsPolicyError,
   AdaSoulsProviderError,
   AdaSoulsRateLimitError,
+  AdaSoulsTimeoutError,
   AdaSoulsValidationError,
 } from "@adasouls/sdk";
 
@@ -36,6 +37,10 @@ export function toToolError(err: unknown): CallToolResult {
   }
   if (err instanceof AdaSoulsRateLimitError) {
     return errorResult(err.message, { kind: "rate_limited", retryAfterSeconds: err.retryAfterSeconds });
+  }
+  if (err instanceof AdaSoulsTimeoutError) {
+    // The request may have been applied: a retry must be the same request, never a second payment.
+    return errorResult(`${err.message}. It may still have gone through: retry with the same idempotencyKey (or the same txHash/reference), and never send a payment again.`, { kind: "timeout" });
   }
   if (err instanceof AdaSoulsNoDelegationError) {
     return errorResult(err.message, { kind: "no_delegation" });

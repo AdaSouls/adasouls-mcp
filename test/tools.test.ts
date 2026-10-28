@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { AdaSouls } from "@adasouls/sdk";
-import { AdaSoulsPolicyError, AdaSoulsApprovalPending, AdaSoulsNoDelegationError } from "@adasouls/sdk";
+import { AdaSoulsPolicyError, AdaSoulsApprovalPending, AdaSoulsNoDelegationError, AdaSoulsError, AdaSoulsTimeoutError } from "@adasouls/sdk";
 import { registerTools } from "../src/tools.js";
 
 /**
@@ -47,6 +47,7 @@ describe("adasouls-mcp tools", () => {
         "adasouls_get_history",
         "adasouls_test_connection",
         "adasouls_report_payment",
+        "adasouls_confirm_payment",
         "adasouls_report_metrics",
         "adasouls_find_agents",
         "adasouls_hire_agent",
@@ -72,7 +73,7 @@ describe("adasouls-mcp tools", () => {
 
     const result = await client.callTool({
       name: "adasouls_execute",
-      arguments: { agentId: "agent_1", capability: "pay", amount: "999999", asset: "USDC" },
+      arguments: { agentId: "agent_1", capability: "pay", amount: "999999", asset: "USDC", idempotencyKey: "pay_1" },
     });
 
     expect(result.isError).toBe(true);
@@ -84,7 +85,7 @@ describe("adasouls-mcp tools", () => {
     const client = await connectedClient(fakeAdaSouls({ execute }));
     await client.listTools(); // from here the client validates structuredContent, on errors too
 
-    const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "999999", asset: "USDC" } });
+    const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "999999", asset: "USDC", idempotencyKey: "pay_1" } });
     expect(result.isError).toBe(true);
     expect(errorDetail(result)).toMatchObject({ kind: "policy_denied", reasons: ["exceeds limit"] });
   });
@@ -95,7 +96,7 @@ describe("adasouls-mcp tools", () => {
 
     const result = await client.callTool({
       name: "adasouls_execute",
-      arguments: { agentId: "agent_1", capability: "pay", amount: "200", asset: "USDC" },
+      arguments: { agentId: "agent_1", capability: "pay", amount: "200", asset: "USDC", idempotencyKey: "pay_1" },
     });
 
     expect(result.isError).toBe(true);
@@ -108,7 +109,7 @@ describe("adasouls-mcp tools", () => {
 
     const result = await client.callTool({
       name: "adasouls_execute",
-      arguments: { agentId: "agent_1", capability: "hire", amount: "1", asset: "USDC" },
+      arguments: { agentId: "agent_1", capability: "hire", amount: "1", asset: "USDC", idempotencyKey: "pay_1" },
     });
 
     expect(result.isError).toBe(true);
@@ -171,14 +172,14 @@ describe("adasouls-mcp tools", () => {
 
     it("adasouls_execute", async () => {
       const client = await listed({ execute: vi.fn().mockResolvedValue({ action }) });
-      const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "1", asset: "USDC" } });
+      const result = await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "1", asset: "USDC", idempotencyKey: "pay_1" } });
       expect(result.isError).toBeFalsy();
       expect((result.structuredContent as { authority: unknown }).authority).toEqual(action.authority);
     });
 
     it("adasouls_check_policy", async () => {
       const client = await listed({ checkPolicy: vi.fn().mockResolvedValue(action.policyEvaluation) });
-      const result = await client.callTool({ name: "adasouls_check_policy", arguments: { agentId: "agent_1", capability: "pay" } });
+      const result = await client.callTool({ name: "adasouls_check_policy", arguments: { agentId: "agent_1", capability: "pay", amount: "1", asset: "USDC" } });
       expect(result.isError).toBeFalsy();
     });
 
@@ -260,6 +261,67 @@ describe("adasouls-mcp tools", () => {
 
       const got = await client.callTool({ name: "adasouls_get_job", arguments: { agentId: "agent_1", jobId: "job_1" } });
       expect(got.structuredContent).toMatchObject({ status: "completed", result: { risk: "low" } });
+    });
+  });
+
+  describe("not paying twice", () => {
+    const authorized = { id: "eco_1", agentId: "agent_1", capability: "pay", status: "authorized", intent: {}, needsReconciliation: false, createdAt: "now" };
+
+    it("adasouls_execute needs an amount, an asset and an idempotencyKey, and passes the key through", async () => {
+      const execute = vi.fn().mockResolvedValue({ action: authorized });
+      const client = await connectedClient(fakeAdaSouls({ execute }));
+      for (const args of [{ capability: "pay", asset: "USDC", idempotencyKey: "k" }, { capability: "pay", amount: "1", idempotencyKey: "k" }, { capability: "pay", amount: "1", asset: "USDC" }, { capability: "pay", amount: "ten", asset: "USDC", idempotencyKey: "k" }]) {
+        expect((await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", ...args } })).isError, JSON.stringify(args)).toBe(true);
+      }
+      expect(execute).not.toHaveBeenCalled();
+      await client.callTool({ name: "adasouls_execute", arguments: { agentId: "agent_1", capability: "pay", amount: "10.50", asset: "USDC", idempotencyKey: "pay-vendor-2026-10-28" } });
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ amount: "10.50", asset: "USDC", idempotencyKey: "pay-vendor-2026-10-28" }));
+    });
+
+    it("a report that fails for an action already reported says so, and says not to pay again", async () => {
+      const reportPayment = vi.fn().mockRejectedValue(new AdaSoulsError("economic action \"eco_1\" is executing, not waiting for a payment"));
+      const action = vi.fn().mockResolvedValue({ action: { ...authorized, status: "executing" } });
+      const client = await connectedClient(fakeAdaSouls({ reportPayment, action }));
+      await client.listTools();
+      const result = await client.callTool({ name: "adasouls_report_payment", arguments: { agentId: "agent_1", economicActionId: "eco_1", txHash: "0xabc" } });
+      expect(result.isError).toBeFalsy();
+      expect((result.content as { text: string }[])[0].text).toMatch(/already reported.*Do not send the payment again/);
+      expect(result.structuredContent).toMatchObject({ status: "executing" });
+    });
+
+    it("a report that fails while the action still waits is an error to retry with the same reference; a timeout says it may have gone through", async () => {
+      const reportPayment = vi.fn().mockRejectedValue(new AdaSoulsTimeoutError("POST /economic-actions/eco_1/payment got no response within 20000 ms"));
+      const action = vi.fn().mockResolvedValue({ action: authorized });
+      const client = await connectedClient(fakeAdaSouls({ reportPayment, action }));
+      const result = await client.callTool({ name: "adasouls_report_payment", arguments: { agentId: "agent_1", economicActionId: "eco_1", txHash: "0xabc" } });
+      expect(result.isError).toBe(true);
+      expect(errorDetail(result)).toMatchObject({ kind: "timeout" });
+      expect((result.content as { text: string }[])[0].text).toMatch(/never send a payment again/);
+    });
+
+    it("a card payment is reported by its PaymentIntent; exactly one of txHash and reference", async () => {
+      const reportPayment = vi.fn().mockResolvedValue({ action: { ...authorized, status: "executing" } });
+      const action = vi.fn().mockResolvedValue({ action: authorized });
+      const client = await connectedClient(fakeAdaSouls({ reportPayment, action }));
+      await client.callTool({ name: "adasouls_report_payment", arguments: { agentId: "agent_1", economicActionId: "eco_1", reference: "pi_3Nabc" } });
+      expect(reportPayment).toHaveBeenCalledWith("eco_1", { rail: "stripe", reference: "pi_3Nabc" });
+      for (const args of [{}, { txHash: "0xabc", reference: "pi_3Nabc" }]) {
+        const r = await client.callTool({ name: "adasouls_report_payment", arguments: { agentId: "agent_1", economicActionId: "eco_1", ...args } });
+        expect(r.isError).toBe(true);
+      }
+      expect(reportPayment).toHaveBeenCalledTimes(1);
+    });
+
+    it("adasouls_confirm_payment is the payee's answer", async () => {
+      const confirmPayment = vi.fn().mockResolvedValue({ id: "rcp_eco_1", economicActionId: "eco_1", paymentStatus: "confirmed", deliveryStatus: "pending" });
+      const declinePayment = vi.fn().mockResolvedValue({ id: "rcp_eco_1", economicActionId: "eco_1", paymentStatus: "declined", deliveryStatus: "pending" });
+      const client = await connectedClient(fakeAdaSouls({ confirmPayment, declinePayment }));
+      await client.listTools();
+      const ok = await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_1", decision: "confirm" } });
+      expect(confirmPayment).toHaveBeenCalledWith("eco_1");
+      expect(ok.structuredContent).toMatchObject({ paymentStatus: "confirmed" });
+      await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_1", decision: "decline", reason: "no charge" } });
+      expect(declinePayment).toHaveBeenCalledWith("eco_1", "no charge");
     });
   });
 });

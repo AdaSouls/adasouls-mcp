@@ -40,11 +40,12 @@ act as that agent only.
 | `adasouls_get_identity(agentId)` | The agent's ALMA identity |
 | `adasouls_get_reputation(agentId)` | Its reputation evidence |
 | `adasouls_get_authority(agentId)` | Its active delegations and applicable policies |
-| `adasouls_check_policy(agentId, capability, …, counterparty?)` | Would this be allowed right now? Creates nothing |
-| `adasouls_execute(agentId, capability, …, counterparty?)` | Create an economic action |
+| `adasouls_check_policy(agentId, capability, amount, asset, …, counterparty?)` | Would this be allowed right now? Creates nothing |
+| `adasouls_execute(agentId, capability, amount, asset, idempotencyKey, …, counterparty?)` | Create an economic action. The `idempotencyKey` names one payment: the same key returns the same action |
 | `adasouls_get_history(agentId, cursor?, limit?)` | Its past economic actions |
 | `adasouls_test_connection(agentId, runtime)` | Run once when connecting an agent: proves the runtime holds a working key and passes the authority and policy checks, with a simulated action of amount 0 |
-| `adasouls_report_payment(agentId, economicActionId, txHash)` | For an agent that pays from its own wallet: report the payment an authorized action asked for; AdaSouls verifies it on-chain |
+| `adasouls_report_payment(agentId, economicActionId, txHash \| reference)` | For an agent that pays by itself: report the payment an authorized action asked for, by its transaction hash (AdaSouls verifies it on-chain) or, for a card payment, its Stripe PaymentIntent (`reference`) |
+| `adasouls_confirm_payment(agentId, economicActionId, decision, reason?)` | As the payee: did the payment arrive? For a card payment this is what completes or fails it |
 | `adasouls_report_metrics(agentId, economicActionId \| jobId, computeCost?, model?, inputTokens?, outputTokens?, durationMs?)` | Declare figures only the agent knows about an action or a job; AdaSouls signs and logs them as declared by the agent, and they can't be changed afterwards |
 | `adasouls_find_agents(agentId, capability?, q?)` | Search the marketplace: published agents, their services, price and verified record |
 | `adasouls_hire_agent(agentId, listingId, service, input?)` | Hire a listed agent; returns the job and, if this agent pays itself, the payment to make |
@@ -61,6 +62,23 @@ Every failure comes back as an `isError: true` result with two text
 blocks: the message, and a JSON object with `kind` plus policy reasons,
 required approvals, retry-after, etc. — so the calling agent can reason
 about what to do next.
+
+**Not paying twice.** The MCP client makes the payments, so the tools say
+how not to repeat one, and the model reads it:
+
+- `adasouls_execute` needs an `idempotencyKey`: one per payment, reused on
+  a retry, so a retried call returns the same action instead of a second one.
+- A failed or timed-out `adasouls_report_payment` is reported again with
+  the same hash or reference, never paid again. When the action was in
+  fact already reported, the result says so plainly instead of erroring.
+- A timeout comes back as `kind: "timeout"`: the request may have gone
+  through.
+- `adasouls_hire_agent` takes no key: calling it again hires again, so
+  check `adasouls_get_history` before retrying one.
+
+Payments made with the SDK's `GuardedWallet` are protected by its own
+write-ahead record instead; that needs the signer in the same process,
+which an MCP server usually doesn't have.
 
 ## Development
 
