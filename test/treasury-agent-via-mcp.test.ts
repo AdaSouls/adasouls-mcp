@@ -67,6 +67,7 @@ describe.skipIf(!baseUrl || !apiKey || !agentId || !vendorId)("Treasury Agent de
         asset: "USDC",
         to: vendorId!,
         counterparty: { id: vendorId! },
+        idempotencyKey: crypto.randomUUID(),
       },
     });
     expect(executeResult.isError).toBeFalsy();
@@ -90,6 +91,7 @@ describe.skipIf(!baseUrl || !apiKey || !agentId || !vendorId)("Treasury Agent de
         asset: "USDC",
         to: "agent_untrusted_vendor",
         counterparty: { id: "agent_untrusted_vendor" },
+        idempotencyKey: crypto.randomUUID(),
       },
     });
 
