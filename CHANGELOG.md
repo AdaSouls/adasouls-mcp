@@ -1,5 +1,11 @@
 # @adasouls/mcp
 
+## 0.5.1
+
+### Patch Changes
+
+- [#13](https://github.com/AdaSouls/adasouls-mcp/pull/13) [`fefba25`](https://github.com/AdaSouls/adasouls-mcp/commit/fefba25027cd157a9d16a48230a46124caaa2776) Thanks [@MatiFalcone](https://github.com/MatiFalcone)! - On @adasouls/sdk 0.8.0: economic actions now carry `expiresAt` (when a self-paid authorization stops being payable, AdaSouls/adasouls-api#17), returned as part of `adasouls_execute`'s and `adasouls_get_history`'s results.
+
 ## 0.5.0
 
 ### Minor Changes
