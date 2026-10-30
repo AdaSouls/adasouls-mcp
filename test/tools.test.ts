@@ -11,9 +11,9 @@ import { registerTools } from "../src/tools.js";
  * testing strategy -- proves the tool registrations (names, schemas,
  * error mapping) are correct without needing a real adasouls-api.
  */
-async function connectedClient(fakeAdaSouls: AdaSouls) {
+async function connectedClient(fakeAdaSouls: AdaSouls, options: Parameters<typeof registerTools>[2] = {}) {
   const server = new McpServer({ name: "test", version: "0.0.1" });
-  registerTools(server, fakeAdaSouls);
+  registerTools(server, fakeAdaSouls, options);
 
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.1" });
@@ -315,13 +315,39 @@ describe("adasouls-mcp tools", () => {
     it("adasouls_confirm_payment is the payee's answer", async () => {
       const confirmPayment = vi.fn().mockResolvedValue({ id: "rcp_eco_1", economicActionId: "eco_1", paymentStatus: "confirmed", deliveryStatus: "pending" });
       const declinePayment = vi.fn().mockResolvedValue({ id: "rcp_eco_1", economicActionId: "eco_1", paymentStatus: "declined", deliveryStatus: "pending" });
-      const client = await connectedClient(fakeAdaSouls({ confirmPayment, declinePayment }));
+      const receipt = vi.fn().mockResolvedValue({ id: "rcp_eco_1", statement: { v: "alma-receipt/1", txHash: "0xabc" } });
+      const client = await connectedClient(fakeAdaSouls({ confirmPayment, declinePayment, receipt }));
       await client.listTools();
       const ok = await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_1", decision: "confirm" } });
       expect(confirmPayment).toHaveBeenCalledWith("eco_1");
       expect(ok.structuredContent).toMatchObject({ paymentStatus: "confirmed" });
       await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_1", decision: "decline", reason: "no charge" } });
       expect(declinePayment).toHaveBeenCalledWith("eco_1", "no charge");
+    });
+
+    const cardReceipt = { id: "rcp_eco_2", statement: { v: "alma-receipt/2", settlement: "counterparty", reference: "pi_3Ncard" } };
+
+    it("a card payment is confirmed with what the agent's own Stripe account shows", async () => {
+      const confirmCardPayment = vi.fn().mockResolvedValue({ id: "rcp_eco_2", economicActionId: "eco_2", paymentStatus: "confirmed", deliveryStatus: "pending" });
+      const confirmPayment = vi.fn();
+      const lookUpPaymentIntent = vi.fn();
+      const client = await connectedClient(fakeAdaSouls({ confirmCardPayment, confirmPayment, receipt: vi.fn().mockResolvedValue(cardReceipt) }), { lookUpPaymentIntent });
+      const ok = await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_2", decision: "confirm" } });
+      expect(ok.structuredContent).toMatchObject({ paymentStatus: "confirmed" });
+      expect(confirmCardPayment).toHaveBeenCalledWith("eco_2", lookUpPaymentIntent);
+      expect(confirmPayment).not.toHaveBeenCalled();
+    });
+
+    it("without STRIPE_API_KEY a card payment can't be confirmed, and the error says what to set; declining still works", async () => {
+      const confirmCardPayment = vi.fn();
+      const declinePayment = vi.fn().mockResolvedValue({ id: "rcp_eco_2", economicActionId: "eco_2", paymentStatus: "declined", deliveryStatus: "pending" });
+      const client = await connectedClient(fakeAdaSouls({ confirmCardPayment, declinePayment, receipt: vi.fn().mockResolvedValue(cardReceipt) }));
+      const r = await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_2", decision: "confirm" } });
+      expect(r.isError).toBe(true);
+      expect(JSON.stringify(r.content)).toMatch(/STRIPE_API_KEY/);
+      expect(confirmCardPayment).not.toHaveBeenCalled();
+      const declined = await client.callTool({ name: "adasouls_confirm_payment", arguments: { agentId: "agent_seller", economicActionId: "eco_2", decision: "decline", reason: "no charge" } });
+      expect(declined.isError).toBeFalsy();
     });
   });
 });

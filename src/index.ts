@@ -9,5 +9,5 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const server = createServer({ apiKey, baseUrl: process.env.ADASOULS_API_URL, onlineAgentId: process.env.ADASOULS_ONLINE_AGENT_ID || undefined });
+const server = createServer({ apiKey, baseUrl: process.env.ADASOULS_API_URL, onlineAgentId: process.env.ADASOULS_ONLINE_AGENT_ID || undefined, stripeApiKey: process.env.STRIPE_API_KEY || undefined });
 await server.connect(new StdioServerTransport());

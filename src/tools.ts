@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { AdaSouls } from "@adasouls/sdk";
+import type { AdaSouls, LookUpPaymentIntent } from "@adasouls/sdk";
 import { AdaSoulsValidationError } from "@adasouls/sdk";
 import { toToolError } from "./errors.js";
 
@@ -68,7 +68,12 @@ const economicActionSchema = open({
   createdAt: z.string(),
 });
 
-export function registerTools(server: McpServer, adasouls: AdaSouls) {
+export interface ToolOptions {
+  /** Reads a PaymentIntent in this agent's own Stripe account (src/stripe.ts): needed to confirm a card payment. */
+  lookUpPaymentIntent?: LookUpPaymentIntent;
+}
+
+export function registerTools(server: McpServer, adasouls: AdaSouls, options: ToolOptions = {}) {
   server.registerTool(
     "adasouls_get_identity",
     {
@@ -276,7 +281,7 @@ export function registerTools(server: McpServer, adasouls: AdaSouls) {
     {
       title: "Answer whether a payment arrived",
       description:
-        "As the payee: says whether a payment to this agent arrived. For a card payment this is what completes it (confirm) or fails it (decline): AdaSouls never sees a card payment settle. Confirm only after checking your own Stripe account (or wallet) shows it, for the receipt's amount. Each payment can be answered once.",
+        "As the payee: says whether a payment to this agent arrived. For a card payment this is what completes it (confirm) or fails it (decline): AdaSouls never sees a card payment settle. Confirming a card payment reads the PaymentIntent in this agent's own Stripe account (this server's STRIPE_API_KEY) and sends what it shows; AdaSouls refuses it unless it succeeded, for the receipt's amount and currency, made for this action. For an on-chain payment, confirm only after your wallet shows it. Each payment can be answered once.",
       inputSchema: {
         ...agentIdParam,
         economicActionId: z.string().min(1).describe("The payer's action: for a hire, the job's economicActionId"),
@@ -288,7 +293,14 @@ export function registerTools(server: McpServer, adasouls: AdaSouls) {
     async ({ agentId, economicActionId, decision, reason }) => {
       try {
         const agent = adasouls.agent(agentId);
-        const receipt = decision === "confirm" ? await agent.confirmPayment(economicActionId) : await agent.declinePayment(economicActionId, reason);
+        let receipt;
+        if (decision === "decline") receipt = await agent.declinePayment(economicActionId, reason);
+        else if ((await agent.receipt(economicActionId)).statement.settlement !== "counterparty") receipt = await agent.confirmPayment(economicActionId);
+        else if (!options.lookUpPaymentIntent) {
+          throw new AdaSoulsValidationError(
+            "confirming a card payment needs this server to read the PaymentIntent in the agent's own Stripe account: set STRIPE_API_KEY (a Stripe test key; a restricted one that can read PaymentIntents is enough) in the server's environment"
+          );
+        } else receipt = await agent.confirmCardPayment(economicActionId, options.lookUpPaymentIntent);
         return { content: [{ type: "text", text: JSON.stringify(receipt) }], structuredContent: structured(receipt) };
       } catch (err) {
         return toToolError(err);
