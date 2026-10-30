@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AdaSouls } from "@adasouls/sdk";
 import { registerTools } from "./tools.js";
+import { createPaymentIntentLookup } from "./stripe.js";
 import { createRequire } from "node:module";
 
 /**
@@ -19,6 +20,8 @@ export interface CreateServerOptions {
    * shown by its last activity.
    */
   onlineAgentId?: string;
+  /** Optional: this agent's own Stripe test key, to confirm card payments it received (src/stripe.ts). Never sent to AdaSouls. */
+  stripeApiKey?: string;
 }
 
 /**
@@ -29,7 +32,7 @@ export interface CreateServerOptions {
 export function createServer(options: CreateServerOptions): McpServer {
   const server = new McpServer({ name: "adasouls-mcp", version: SERVER_VERSION });
   const adasouls = new AdaSouls({ apiKey: options.apiKey, baseUrl: options.baseUrl });
-  registerTools(server, adasouls);
+  registerTools(server, adasouls, options.stripeApiKey ? { lookUpPaymentIntent: createPaymentIntentLookup(options.stripeApiKey) } : {});
   if (options.onlineAgentId) {
     // stderr: stdout belongs to the MCP transport.
     adasouls.agent(options.onlineAgentId).stayOnline({ onError: (err) => console.error(`[adasouls-mcp] online signal failed: ${err instanceof Error ? err.message : String(err)}`) });

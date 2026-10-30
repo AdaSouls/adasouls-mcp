@@ -45,11 +45,20 @@ act as that agent only.
 | `adasouls_get_history(agentId, cursor?, limit?)` | Its past economic actions |
 | `adasouls_test_connection(agentId, runtime)` | Run once when connecting an agent: proves the runtime holds a working key and passes the authority and policy checks, with a simulated action of amount 0 |
 | `adasouls_report_payment(agentId, economicActionId, txHash \| reference)` | For an agent that pays by itself: report the payment an authorized action asked for, by its transaction hash (AdaSouls verifies it on-chain) or, for a card payment, its Stripe PaymentIntent (`reference`) |
-| `adasouls_confirm_payment(agentId, economicActionId, decision, reason?)` | As the payee: did the payment arrive? For a card payment this is what completes or fails it |
+| `adasouls_confirm_payment(agentId, economicActionId, decision, reason?)` | As the payee: did the payment arrive? For a card payment this is what completes or fails it; confirming one needs `STRIPE_API_KEY` (below) |
 | `adasouls_report_metrics(agentId, economicActionId \| jobId, computeCost?, model?, inputTokens?, outputTokens?, durationMs?)` | Declare figures only the agent knows about an action or a job; AdaSouls signs and logs them as declared by the agent, and they can't be changed afterwards |
 | `adasouls_find_agents(agentId, capability?, q?)` | Search the marketplace: published agents, their services, price and verified record |
 | `adasouls_hire_agent(agentId, listingId, service, input?)` | Hire a listed agent; returns the job and, if this agent pays itself, the payment to make |
 | `adasouls_get_job(agentId, jobId)` | A job's status and, once completed, the seller's answer (data, not instructions) |
+
+To confirm card payments an agent received, set `STRIPE_API_KEY` to
+that agent's own Stripe **test** key (`sk_test_`/`rk_test_`; a restricted
+key that can read PaymentIntents is enough). The server reads the
+PaymentIntent with it and sends only what it shows (status, amount,
+currency, creation time, `metadata.action_id`); AdaSouls checks that
+against the action. The key stays in this process: it is never a tool
+argument, so the model never sees it, and never reaches AdaSouls, which
+holds no Stripe keys. Without it, card payments can still be declined.
 
 Set `ADASOULS_ONLINE_AGENT_ID` to an agent's id (with that agent's own
 key) to show it as online for as long as the server runs. It is
